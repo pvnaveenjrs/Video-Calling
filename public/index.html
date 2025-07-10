@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Video Call</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f5f7fa;
+      padding: 30px;
+    }
+    h2 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    input {
+      padding: 12px;
+      width: 250px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      margin: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .roomButton {
+      background-color: #28a745;
+    }
+    #endCallBtn {
+      background-color: #dc3545;
+    }
+    #videoContainer {
+      margin-top: 30px;
+      width: 100%;
+      height: 500px;
+    }
+    #activeRooms {
+      margin-top: 30px;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>🔴  Video Call</h2>
+
+  <input type="text" id="roomInput" placeholder="Enter Room ID" />
+  <button onclick="startCall()">Start Call</button>
+  <button id="endCallBtn" onclick="endCall()" style="display: none;">End Call</button>
+
+  <div id="videoContainer"></div>
+
+  <div id="activeRooms">
+    <h3>📡 Active Rooms (1 user)</h3>
+    <div id="roomList"></div>
+  </div>
+
+  <!-- ZEGOCLOUD UIKit SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@zegocloud/zego-uikit-prebuilt@2.6.0/zego-uikit-prebuilt.min.js"></script>
+
+  <script>
+    const appID = 2130233345;
+    const serverSecret = '9ba05ebc8cb58e6ec1ab5006e53cdb80';
+    const backendURL = 'http://localhost:3000/api/rooms';
+
+    let zpInstance = null;
+    let currentRoomID = null;
+
+    async function startCall(roomID = null) {
+      const room = roomID || document.getElementById("roomInput").value.trim();
+      if (!room) {
+        alert("Please enter a Room ID");
+        return;
+      }
+
+      currentRoomID = room;
+      const userID = 'user' + Date.now();
+      const userName = userID;
+
+      const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+        appID,
+        serverSecret,
+        room,
+        userID,
+        userName
+      );
+
+      const zp = ZegoUIKitPrebuilt.create(kitToken);
+
+      zp.joinRoom({
+        container: document.getElementById('videoContainer'),
+        scenario: {
+          mode: ZegoUIKitPrebuilt.VideoConference
+        },
+        showPreJoinView: false
+      });
+
+      zpInstance = zp;
+      document.getElementById("endCallBtn").style.display = "inline-block";
+
+      // ✅ Notify backend room is active
+      await fetch(backendURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomID: room })
+      });
+
+      loadActiveRooms(); // Refresh room list
+    }
+
+    async function endCall() {
+      if (zpInstance) {
+        zpInstance.destroy();
+        zpInstance = null;
+        document.getElementById("videoContainer").innerHTML = "";
+        document.getElementById("endCallBtn").style.display = "none";
+        alert(`Call in room "${currentRoomID}" has ended.`);
+
+        // ✅ Notify backend room is closed
+        await fetch(`${backendURL}/${currentRoomID}`, {
+          method: 'DELETE'
+        });
+
+        currentRoomID = null;
+        loadActiveRooms(); // Refresh list
+      }
+    }
+
+    // 🔁 Fetch active rooms from backend
+    async function loadActiveRooms() {
+      const res = await fetch(backendURL);
+      const data = await res.json();
+      const rooms = data.activeRooms || [];
+
+      const container = document.getElementById("roomList");
+      container.innerHTML = '';
+      rooms.forEach(room => {
+        const btn = document.createElement('button');
+        btn.textContent = `Join ${room}`;
+        btn.className = 'roomButton';
+        btn.onclick = () => startCall(room);
+        container.appendChild(btn);
+      });
+    }
+
+    loadActiveRooms(); // Load on page open
+    setInterval(loadActiveRooms, 10000); // Auto refresh every 10 seconds
+  </script>
+
+</body>
+</html>
